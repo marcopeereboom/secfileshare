@@ -484,7 +484,11 @@ func decodeFile(url string) error {
 	} else {
 		fmt.Printf("wrote file %v\n", outFilename)
 	}
-	fmt.Printf("remote description: %v\n", p.Description)
+	d := p.Description
+	if d == "" {
+		d = "N/A"
+	}
+	fmt.Printf("remote description: %v\n", d)
 
 	outFilename = "" // reset for decode many URLs
 
