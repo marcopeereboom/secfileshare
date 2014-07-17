@@ -2,25 +2,33 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha1"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
 
+	"github.com/gorilla/websocket"
 	"github.com/marcopeereboom/mcrypt"
 	"github.com/marcopeereboom/secfileshare/dcrypt"
+	"github.com/marcopeereboom/secfileshare/tunnel"
 )
 
 var (
 	dir         string
 	inFilename  string
 	outFilename string
-	decrypt     bool
+	upload      string
+	mode        string
 	identity    *mcrypt.Identity
 )
 
@@ -35,8 +43,8 @@ func main() {
 	flag.StringVar(&outFilename, "out", "", "filename that will be "+
 		"written out, when empty the system will guess based on the "+
 		"mode of operation")
-	flag.BoolVar(&decrypt, "decrypt", false, "decrypt filename specified in -in")
-	flag.BoolVar(&decrypt, "d", false, "shorthand for -decrypt")
+	flag.StringVar(&mode, "mode", "", "must be encrypt or decrypt, "+
+		"only used in file2file mode")
 	flag.BoolVar(&help, "h", false, "help")
 	flag.BoolVar(&whoami, "whoami", false, "print identity information")
 	flag.BoolVar(&whoami, "w", false, "shorthand for -whoami")
@@ -44,6 +52,28 @@ func main() {
 
 	if help {
 		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nCommon usage examples\n\n")
+		fmt.Fprintf(os.Stderr, "== file to file ==\n")
+		fmt.Fprintf(os.Stderr, "encrypt:\n")
+		fmt.Fprintf(os.Stderr, "\tsecfileshare -in filename -out "+
+			"sharefilename -mode encrypt publickey\n")
+		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
+			"append .sfs to the -in filename\n\n")
+		fmt.Fprintf(os.Stderr, "decrypt:\n")
+		fmt.Fprintf(os.Stderr, "\tsecfileshare -in sharefilename -out "+
+			"decryptedblob -mode decrypt\n")
+		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
+			"use the remote filename hint\n\n")
+		fmt.Fprintf(os.Stderr, "== file to server ==\n\n")
+		fmt.Fprintf(os.Stderr, "\tsecfileshare -in filename -out "+
+			"https://10.170.0.105:12345 publickey\n\n")
+		fmt.Fprintf(os.Stderr, "== server to file ==\n\n")
+		fmt.Fprintf(os.Stderr, "\tsecfileshare -out decryptedblob -in "+
+			"https://10.170.0.105:12345/887123051\n")
+		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
+			"use the remote filename hint\n\n")
+		fmt.Fprintf(os.Stderr, "NOTE: currently secfileshare will "+
+			"and cannot overwrite files! Select -out carefully.\n")
 		return
 	}
 
@@ -66,49 +96,86 @@ func main() {
 }
 
 func _main() error {
-	if inFilename == "" {
-		return fmt.Errorf("must provide an in filename")
-	}
+	// secfileshare <url> [url...]
+	if inFilename == "" && outFilename == "" {
+		if len(flag.Args()) == 0 {
+			// nothing to do, show usage
+			flag.PrintDefaults()
+			os.Exit(1)
+		}
 
-	if len(flag.Args()) == 0 {
-		return fmt.Errorf("must provide recipient public keys")
-	}
-
-	if decrypt {
-		if len(flag.Args()) != 1 {
-			return fmt.Errorf("you can only specify one " +
-				"public identity key")
+		// consider this "download many urls"
+		for _, url := range flag.Args() {
+			err := decodeFile(url)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	if decrypt {
-		// do nothing for now
-	} else {
-		if outFilename == "" {
-			outFilename = inFilename + ".sfs"
+	// detect URLs
+	var outUrl, inUrl bool
+	urlOut, err := url.Parse(outFilename)
+	if err == nil {
+		if urlOut.Scheme == "https" || urlOut.Scheme == "http" {
+			// uploading
+			outUrl = true
+		}
+	}
+	urlIn, err := url.Parse(inFilename)
+	if err == nil {
+		if urlIn.Scheme == "https" || urlOut.Scheme == "http" {
+			// downloading
+			inUrl = true
 		}
 	}
 
-	if outFilename != "" {
-		// see if target file exists
-		_, err := os.Stat(outFilename)
-		if err == nil {
-			return fmt.Errorf("target file already exists")
+	switch {
+	case outUrl == false && inUrl == false:
+		// file to file, require mode
+		switch mode {
+		case "encrypt":
+			pk, err := parsePublicKeys()
+			if err != nil {
+				return err
+			}
+			if outFilename == "" {
+				outFilename = inFilename + ".sfs"
+			}
+			_, err = os.Stat(outFilename)
+			if err == nil {
+				return fmt.Errorf("target file already exists")
+			}
+			return encodeFile(pk)
+
+		case "decrypt":
+			return decodeFile("")
+		default:
+			return fmt.Errorf("mode not set")
 		}
-	}
 
-	pk, err := parsePublicKeys()
-	if err != nil {
-		return fmt.Errorf("invalid public key %v\n", err)
-	}
+	case outUrl == true && inUrl == false:
+		// upload
+		upload = urlOut.Host
+		pk, err := parsePublicKeys()
+		if err != nil {
+			return err
+		}
+		return encodeFile(pk)
 
-	if decrypt {
-		err = decodeFile(pk)
-	} else {
-		err = encodeFile(pk)
-	}
-	if err != nil {
-		return err
+	case outUrl == false && inUrl == true:
+		fmt.Printf("url to file\n")
+		// download
+		if len(flag.Args()) != 0 {
+			return fmt.Errorf("must not provide additional " +
+				"parameters")
+		}
+		url := inFilename
+		inFilename = ""
+		return decodeFile(url)
+
+	default:
+		return fmt.Errorf("only -in or -out may contain a URL")
 	}
 
 	return nil
@@ -176,6 +243,10 @@ func setup() error {
 func parsePublicKeys() ([]mcrypt.PublicIdentity, error) {
 	rv := make([]mcrypt.PublicIdentity, 0, len(flag.Args()))
 
+	if len(flag.Args()) == 0 {
+		return nil, fmt.Errorf("must provide public key(s)")
+	}
+
 	for i, v := range flag.Args() {
 		v = strings.ToLower(v)
 		v = strings.TrimPrefix(v, "0x")
@@ -195,6 +266,62 @@ func parsePublicKeys() ([]mcrypt.PublicIdentity, error) {
 	}
 
 	return rv, nil
+}
+
+func uploadFile(j1, j2 []byte) error {
+	host, port, err := net.SplitHostPort(upload)
+	if err != nil {
+		return err
+	}
+
+	client, err := tunnel.NewClient(host, port)
+	if err != nil {
+		return err
+	}
+
+	cerr := make(chan error)
+	go func() {
+		var replyErr error
+		defer func() {
+			cerr <- replyErr
+		}()
+
+		// read reply
+		response := tunnel.Response{}
+		err := client.Conn.ReadJSON(&response)
+		if err != nil {
+			replyErr = err
+			return
+		}
+		if response.Error != "" {
+			replyErr = fmt.Errorf("Remote error: %v",
+				response.Error)
+			return
+		}
+
+		// verify digest
+		h := sha1.New()
+		fmt.Fprintf(h, "%s\n%s\n", j1, j2)
+		if response.Digest != fmt.Sprintf("%02x", h.Sum(nil)) {
+			replyErr = fmt.Errorf("Remote digest failure")
+			return
+		}
+
+		fmt.Printf("%v\n", response.Url)
+		client.Conn.Close()
+	}()
+
+	err = client.Conn.WriteMessage(websocket.BinaryMessage, j1)
+	if err != nil {
+		return err
+	}
+
+	err = client.Conn.WriteMessage(websocket.BinaryMessage, j2)
+	if err != nil {
+		return err
+	}
+
+	return <-cerr
 }
 
 func encodeFile(to []mcrypt.PublicIdentity) error {
@@ -237,31 +364,54 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 	}
 
 	// write out bits
-	f, err := os.OpenFile(outFilename,
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		return err
+	if upload == "" {
+		f, err := os.OpenFile(outFilename,
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		fmt.Fprintf(f, "%s\n%s\n", j, msgJson)
+	} else {
+		return uploadFile(j, msgJson)
 	}
-	defer f.Close()
-	fmt.Fprintf(f, "%s\n%s\n", j, msgJson)
 
 	return nil
 }
 
-func decodeFile(to []mcrypt.PublicIdentity) error {
-	f, err := os.Open(inFilename)
-	if err != nil {
-		return err
+func decodeFile(url string) error {
+	var r *bufio.Reader
+	if inFilename == "" {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client := &http.Client{Transport: tr}
+
+		response, err := client.Get(url)
+		if err != nil {
+			return err
+		}
+		if response.StatusCode != 200 {
+			return fmt.Errorf("remote error: %v", response.Status)
+		}
+		defer response.Body.Close()
+		r = bufio.NewReader(response.Body)
+	} else {
+		f, err := os.Open(inFilename)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		r = bufio.NewReader(f)
 	}
-	defer f.Close()
-	r := bufio.NewReader(f)
 
 	// read shared secrets
 	ssJson, err := r.ReadBytes('\n')
 	if err != nil {
 		return err
 	}
-	ss, err := dcrypt.SharedSecretFromRecipient(identity, &to[0], ssJson)
+	ss, err := dcrypt.SharedSecretFromRecipient(identity,
+		&identity.PublicIdentity, ssJson)
 	if err != nil {
 		return err
 	}
@@ -289,19 +439,21 @@ func decodeFile(to []mcrypt.PublicIdentity) error {
 
 	// determine out file
 	if outFilename == "" {
-		_, err := os.Stat(p.Basename)
-		if err == nil {
-			return fmt.Errorf("target file already exists")
-		}
 		outFilename = p.Basename
 	}
 
+	_, err = os.Stat(outFilename)
+	if err == nil {
+		return fmt.Errorf("target file already exists: %v",
+			outFilename)
+	}
 	err = ioutil.WriteFile(outFilename, p.Payload, 0600)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("wrote file %v, remote suggestion was %v\n", outFilename,
 		p.Basename)
+	outFilename = "" // reset for decode many URLs
 
 	return nil
 }
