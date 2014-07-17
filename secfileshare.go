@@ -198,35 +198,30 @@ func setup() error {
 	// setup paths
 	usr, err := user.Current()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not obtain user: %v", err)
 	}
 	dir = usr.HomeDir + homeDir
 	err = os.MkdirAll(dir, 0700)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create dir %v: %v", dir, err)
 	}
 
 	// test to see if we have an identity
 	if identityExists() == false {
 		host, err := os.Hostname()
 		if err != nil {
-			return err
-		}
-
-		usr, err := user.Current()
-		if err != nil {
-			return err
+			return fmt.Errorf("could not obtain hostname: %v", err)
 		}
 
 		identity, err = mcrypt.NewIdentity(usr.Name,
 			usr.Username+"@"+host)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not create identity: %v", err)
 		}
 
 		err = identitySave()
 		if err != nil {
-			return err
+			return fmt.Errorf("could not save identity: %v", err)
 		}
 
 		fmt.Printf("inital run, creating identity in %v\n",
@@ -236,7 +231,7 @@ func setup() error {
 
 	err = identityOpen()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not open identity: %v", err)
 	}
 
 	return nil
@@ -254,7 +249,8 @@ func parsePublicKeys() ([]mcrypt.PublicIdentity, error) {
 		v = strings.TrimPrefix(v, "0x")
 		pk, err := hex.DecodeString(v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not decode public "+
+				"key number %v: %v", i+1, err)
 		}
 		if len(pk) != 32 {
 			return nil, fmt.Errorf("invalid public key number %v "+
@@ -273,12 +269,12 @@ func parsePublicKeys() ([]mcrypt.PublicIdentity, error) {
 func uploadFile(j1, j2 []byte) error {
 	host, port, err := net.SplitHostPort(upload)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid hostname %v: %v", upload, err)
 	}
 
 	client, err := tunnel.NewClient(host, port)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create tunnel: %v", err)
 	}
 
 	cerr := make(chan error)
@@ -292,7 +288,8 @@ func uploadFile(j1, j2 []byte) error {
 		response := tunnel.Response{}
 		err := client.Conn.ReadJSON(&response)
 		if err != nil {
-			replyErr = err
+			replyErr = fmt.Errorf("could not read remote "+
+				"response: %v", err)
 			return
 		}
 		if response.Error != "" {
@@ -315,12 +312,13 @@ func uploadFile(j1, j2 []byte) error {
 
 	err = client.Conn.WriteMessage(websocket.BinaryMessage, j1)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not write shared secret blob: %v",
+			err)
 	}
 
 	err = client.Conn.WriteMessage(websocket.BinaryMessage, j2)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not write encrypted blob: %v", err)
 	}
 
 	return <-cerr
@@ -375,7 +373,6 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 			if err != nil {
 				return fmt.Errorf("could not create "+
 					"temporary file: %v", err)
-				return err
 			}
 			tmpFd.Close()
 			outFilename = tmpFd.Name()
