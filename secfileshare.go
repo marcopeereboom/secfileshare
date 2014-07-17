@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/user"
+	"path"
 	"runtime"
 	"strings"
 
@@ -72,8 +73,6 @@ func main() {
 			"https://10.170.0.105:12345/887123051\n")
 		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
 			"use the remote filename hint\n\n")
-		fmt.Fprintf(os.Stderr, "NOTE: currently secfileshare will "+
-			"and cannot overwrite files! Select -out carefully.\n")
 		return
 	}
 
@@ -365,6 +364,16 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 
 	// write out bits
 	if upload == "" {
+		_, err = os.Stat(outFilename)
+		if err == nil {
+			tmpFd, err := ioutil.TempFile(path.Dir(outFilename),
+				outFilename+".")
+			if err != nil {
+				return nil
+			}
+			tmpFd.Close()
+			outFilename = tmpFd.Name()
+		}
 		f, err := os.OpenFile(outFilename,
 			os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
@@ -444,15 +453,26 @@ func decodeFile(url string) error {
 
 	_, err = os.Stat(outFilename)
 	if err == nil {
-		return fmt.Errorf("target file already exists: %v",
-			outFilename)
+		tmpFd, err := ioutil.TempFile(path.Dir(outFilename),
+			outFilename+".")
+		if err != nil {
+			return nil
+		}
+		tmpFd.Close()
+		outFilename = tmpFd.Name()
 	}
+
 	err = ioutil.WriteFile(outFilename, p.Payload, 0600)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("wrote file %v, remote suggestion was %v\n", outFilename,
-		p.Basename)
+	if outFilename != p.Basename {
+		fmt.Printf("wrote file %v, remote suggestion was %v\n", outFilename,
+			p.Basename)
+	} else {
+		fmt.Printf("wrote file %v\n", outFilename)
+	}
+
 	outFilename = "" // reset for decode many URLs
 
 	return nil
