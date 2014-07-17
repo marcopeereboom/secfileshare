@@ -327,39 +327,40 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 	// read file and generate payload structure
 	p, err := dcrypt.NewPayload(inFilename, "Describe payload", true)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create payload: %v", err)
 	}
 
 	// make json
 	pj, err := p.Marshal()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal payload: %v", err)
 	}
 
 	// encrypt payload with shared key
 	ss, err := dcrypt.NewSharedSecret("", "")
 	if err != nil {
-		return err
+		return fmt.Errorf("could not create shared secret: %v", err)
 	}
 	msg, err := ss.Encrypt(pj)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not encrypt payload: %v", err)
 	}
 	msgJson, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal encrypted payload: %v",
+			err)
 	}
 
 	// encrypt shared key to other parties
 	ssJson, err := json.Marshal(ss)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal shared secret: %v", err)
 	}
 
 	// encrypt shared secrets to everyone
 	j, err := dcrypt.NewEncryptedRecipients(identity, to, ssJson)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not encrypt shared secret: %v", err)
 	}
 
 	// write out bits
@@ -369,6 +370,8 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 			tmpFd, err := ioutil.TempFile(path.Dir(outFilename),
 				outFilename+".")
 			if err != nil {
+				return fmt.Errorf("could not create "+
+					"temporary file: %v", err)
 				return err
 			}
 			tmpFd.Close()
@@ -377,7 +380,8 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 		f, err := os.OpenFile(outFilename,
 			os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not create file %v: %v",
+				outFilename, err)
 		}
 		defer f.Close()
 		fmt.Fprintf(f, "%s\n%s\n", j, msgJson)
