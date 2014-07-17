@@ -129,6 +129,7 @@ func _main() error {
 		}
 	}
 
+	fmt.Printf("outUrl %v inUrl %v %v\n", outUrl, inUrl, outFilename)
 	switch {
 	case outUrl == false && inUrl == false:
 		// file to file, require mode
@@ -163,7 +164,6 @@ func _main() error {
 		return encodeFile(pk)
 
 	case outUrl == false && inUrl == true:
-		fmt.Printf("url to file\n")
 		// download
 		if len(flag.Args()) != 0 {
 			return fmt.Errorf("must not provide additional " +
@@ -369,7 +369,7 @@ func encodeFile(to []mcrypt.PublicIdentity) error {
 			tmpFd, err := ioutil.TempFile(path.Dir(outFilename),
 				outFilename+".")
 			if err != nil {
-				return nil
+				return err
 			}
 			tmpFd.Close()
 			outFilename = tmpFd.Name()
@@ -408,7 +408,8 @@ func decodeFile(url string) error {
 	} else {
 		f, err := os.Open(inFilename)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not open %v: %v\n",
+				inFilename, err)
 		}
 		defer f.Close()
 		r = bufio.NewReader(f)
@@ -417,33 +418,35 @@ func decodeFile(url string) error {
 	// read shared secrets
 	ssJson, err := r.ReadBytes('\n')
 	if err != nil {
-		return err
+		return fmt.Errorf("Invalid shared secrets blob: %v", err)
 	}
 	ss, err := dcrypt.SharedSecretFromRecipient(identity,
 		&identity.PublicIdentity, ssJson)
 	if err != nil {
-		return err
+		// err is useless here
+		return fmt.Errorf("invalid or corrupt shared secrets blob: %v",
+			inFilename)
 	}
 
 	// read file
 	fileJson, err := r.ReadBytes('\n')
 	if err != nil {
-		return err
+		return fmt.Errorf("Invalid shared file blob: %v", err)
 	}
 	msg := mcrypt.Message{}
 	err = json.Unmarshal(fileJson, &msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not decode shared file blob: %v", err)
 	}
 	// decrypt payload
 	payloadJson, err := ss.Decrypt(&msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not decrypt payload: %v", err)
 	}
 	// obtain payload structure
 	p, err := dcrypt.NewPayloadFromJson(payloadJson, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not decode payload: %v", err)
 	}
 
 	// determine out file
@@ -456,7 +459,8 @@ func decodeFile(url string) error {
 		tmpFd, err := ioutil.TempFile(path.Dir(outFilename),
 			outFilename+".")
 		if err != nil {
-			return nil
+			return fmt.Errorf("could not create temporary file %v",
+				err)
 		}
 		tmpFd.Close()
 		outFilename = tmpFd.Name()
@@ -464,7 +468,8 @@ func decodeFile(url string) error {
 
 	err = ioutil.WriteFile(outFilename, p.Payload, 0600)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not write to %v: %v",
+			outFilename, err)
 	}
 	if outFilename != p.Basename {
 		fmt.Printf("wrote file %v, remote suggestion was %v\n", outFilename,
