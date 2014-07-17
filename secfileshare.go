@@ -30,6 +30,7 @@ var (
 	outFilename string
 	upload      string
 	mode        string
+	description string
 	identity    *mcrypt.Identity
 )
 
@@ -39,6 +40,9 @@ func main() {
 	help := false
 	whoami := false
 
+	flag.StringVar(&description, "desc", "", "description that will be"+
+		"added to encrypted blob")
+	flag.StringVar(&description, "d", "", "shorthand for -d")
 	flag.StringVar(&inFilename, "in", "", "filename that will be "+
 		"encrypted/decrypted")
 	flag.StringVar(&outFilename, "out", "", "filename that will be "+
@@ -129,7 +133,6 @@ func _main() error {
 		}
 	}
 
-	fmt.Printf("outUrl %v inUrl %v %v\n", outUrl, inUrl, outFilename)
 	switch {
 	case outUrl == false && inUrl == false:
 		// file to file, require mode
@@ -325,7 +328,7 @@ func uploadFile(j1, j2 []byte) error {
 
 func encodeFile(to []mcrypt.PublicIdentity) error {
 	// read file and generate payload structure
-	p, err := dcrypt.NewPayload(inFilename, "Describe payload", true)
+	p, err := dcrypt.NewPayload(inFilename, description, true)
 	if err != nil {
 		return fmt.Errorf("could not create payload: %v", err)
 	}
@@ -481,6 +484,7 @@ func decodeFile(url string) error {
 	} else {
 		fmt.Printf("wrote file %v\n", outFilename)
 	}
+	fmt.Printf("remote description: %v\n", p.Description)
 
 	outFilename = "" // reset for decode many URLs
 
