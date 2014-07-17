@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/marcopeereboom/dcrypt.old"
+	"github.com/marcopeereboom/secfileshare/dcrypt"
 	"github.com/marcopeereboom/secfileshare/tunnel"
 
 	"os"
