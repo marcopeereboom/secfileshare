@@ -119,8 +119,6 @@ func _main() error {
 	}
 
 	// guess hostname if not set
-	fmt.Printf("hostName %v\n", hostName)
-
 	if hostName == "" {
 		hostName, err = os.Hostname()
 		if err != nil {
@@ -130,7 +128,7 @@ func _main() error {
 	}
 
 	// start listening
-	listeners := []string{hostName}
+	listeners := []string{":12345"}
 	_, err = tunnel.NewServer(listeners,
 		certFilename,
 		keyFilename,
@@ -141,6 +139,7 @@ func _main() error {
 	}
 
 	fmt.Printf("Listening on %v\n", listeners)
+	fmt.Printf("Reply address %v\n", hostName)
 	c := make(chan bool)
 	<-c
 
