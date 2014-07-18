@@ -114,6 +114,7 @@ func _main() error {
 				return err
 			}
 		}
+		return nil
 	}
 
 	// detect URLs
