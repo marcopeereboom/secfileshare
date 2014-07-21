@@ -34,6 +34,23 @@ var (
 	identity    *mcrypt.Identity
 )
 
+func usage() {
+	flag.PrintDefaults()
+	fmt.Fprintf(os.Stderr, "\nCommon usage examples\n\n"+
+		"== file to file ==\n"+
+		"encrypt:\n"+
+		"\tsecfileshare -in filename -out sharefilename -mode encrypt publickey\n"+
+		"If -out is omitted the system will append .sfs to the -in filename\n\n"+
+		"decrypt:\n"+
+		"\tsecfileshare -in sharefilename -out decryptedblob -mode decrypt\n"+
+		"If -out is omitted the system will use the remote filename hint\n\n"+
+		"== file to server ==\n\n"+
+		"\tsecfileshare -in filename -out https://a.b.c:12345 publickey\n\n"+
+		"== server to file ==\n\n"+
+		"\tsecfileshare -out decryptedblob -in https://a.b.c:12345/887123051\n"+
+		"If -out is omitted the system will use the remote filename hint\n\n")
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -49,34 +66,14 @@ func main() {
 		"written out, when empty the system will guess based on the "+
 		"mode of operation")
 	flag.StringVar(&mode, "mode", "", "must be encrypt or decrypt, "+
-		"only used in file2file mode")
+		"only used in file to file mode")
 	flag.BoolVar(&help, "h", false, "help")
 	flag.BoolVar(&whoami, "whoami", false, "print identity information")
 	flag.BoolVar(&whoami, "w", false, "shorthand for -whoami")
 	flag.Parse()
 
 	if help {
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nCommon usage examples\n\n")
-		fmt.Fprintf(os.Stderr, "== file to file ==\n")
-		fmt.Fprintf(os.Stderr, "encrypt:\n")
-		fmt.Fprintf(os.Stderr, "\tsecfileshare -in filename -out "+
-			"sharefilename -mode encrypt publickey\n")
-		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
-			"append .sfs to the -in filename\n\n")
-		fmt.Fprintf(os.Stderr, "decrypt:\n")
-		fmt.Fprintf(os.Stderr, "\tsecfileshare -in sharefilename -out "+
-			"decryptedblob -mode decrypt\n")
-		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
-			"use the remote filename hint\n\n")
-		fmt.Fprintf(os.Stderr, "== file to server ==\n\n")
-		fmt.Fprintf(os.Stderr, "\tsecfileshare -in filename -out "+
-			"https://10.170.0.105:12345 publickey\n\n")
-		fmt.Fprintf(os.Stderr, "== server to file ==\n\n")
-		fmt.Fprintf(os.Stderr, "\tsecfileshare -out decryptedblob -in "+
-			"https://10.170.0.105:12345/887123051\n")
-		fmt.Fprintf(os.Stderr, "If -out is omitted the system will "+
-			"use the remote filename hint\n\n")
+		usage()
 		return
 	}
 
@@ -103,7 +100,7 @@ func _main() error {
 	if inFilename == "" && outFilename == "" {
 		if len(flag.Args()) == 0 {
 			// nothing to do, show usage
-			flag.PrintDefaults()
+			usage()
 			os.Exit(1)
 		}
 
@@ -228,6 +225,7 @@ func setup() error {
 		fmt.Printf("inital run, creating identity in %v\n",
 			dir+identityFilename)
 		printIdentity()
+		os.Exit(0)
 	}
 
 	err = identityOpen()
@@ -429,6 +427,10 @@ func decodeFile(url string) error {
 		&identity.PublicIdentity, ssJson)
 	if err != nil {
 		// err is useless here
+		s := inFilename
+		if s == "" {
+			s = url
+		}
 		return fmt.Errorf("invalid or corrupt shared secrets blob: %v",
 			inFilename)
 	}
