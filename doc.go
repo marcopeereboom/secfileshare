@@ -1,5 +1,3 @@
-package main
-
 /*
 secfileshare is an experimental tool to share files securely.
 
@@ -85,3 +83,4 @@ To-Do:
 	* Add server management using HTTPS
 	* Figure out auto-PKI
 */
+package main
