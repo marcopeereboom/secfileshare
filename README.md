@@ -4,4 +4,10 @@ secfileshare
 Securely share files with others.
 
 Highly experimental secure file share tool.
-Do not use yet.
+Only use for testing.
+
+Documentation
+=============
+
+See the godoc page at http://godoc.org/github.com/marcopeereboom/secfileshare
+
